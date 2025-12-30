@@ -116,32 +116,46 @@ newsletterRoutes.post('/sync', async (c) => {
           fullMessage = message; // Fall back to list data
         }
 
+        // Helper to safely convert any value to SQLite-compatible type
+        const toSql = (val: unknown, fieldName: string): string | number | null => {
+          if (val === undefined || val === null) return null;
+          if (typeof val === 'string') return val;
+          if (typeof val === 'number') return val;
+          if (typeof val === 'boolean') return val ? 1 : 0;
+          if (val instanceof Date) return val.toISOString();
+          // Log unexpected types for debugging
+          console.warn(`Unexpected type for ${fieldName}:`, typeof val, val);
+          return String(val);
+        };
+
         // Parse from address (format: "Name <email>" or just "email")
         const fromMatch = fullMessage.from?.match(/^(.+?)\s*<(.+)>$/) || [null, null, fullMessage.from];
         const fromName = fromMatch[1]?.trim() ?? null;
         const fromAddress = fromMatch[2] ?? fullMessage.from ?? 'unknown';
 
-        // Ensure timestamp is a string (SQLite can't bind Date objects)
-        const timestamp = typeof fullMessage.timestamp === 'string'
-          ? fullMessage.timestamp
-          : fullMessage.timestamp instanceof Date
-            ? fullMessage.timestamp.toISOString()
-            : fullMessage.timestamp ? String(fullMessage.timestamp) : new Date().toISOString();
-
-        // Helper to convert undefined to null (SQLite doesn't accept undefined)
-        const toSqlValue = (val: unknown): string | number | boolean | null => {
-          if (val === undefined || val === null) return null;
-          if (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean') return val;
-          return String(val);
+        // Prepare all values with logging
+        const values = {
+          message_id: toSql(fullMessage.message_id, 'message_id'),
+          from_address: toSql(fromAddress, 'from_address'),
+          from_name: toSql(fromName, 'from_name'),
+          subject: toSql(fullMessage.subject, 'subject') || '(No subject)',
+          timestamp: toSql(fullMessage.timestamp, 'timestamp') || new Date().toISOString(),
+          raw_text: toSql(fullMessage.text || fullMessage.preview, 'raw_text'),
+          raw_html: toSql(fullMessage.html, 'raw_html'),
         };
+
+        // Debug: log the types of all values
+        console.log('Inserting newsletter:', fullMessage.message_id, 'Types:', Object.fromEntries(
+          Object.entries(values).map(([k, v]) => [k, v === null ? 'null' : typeof v])
+        ));
 
         if (existing) {
           // Update existing newsletter with full content
           db.run(`
             UPDATE newsletters SET raw_text = ?, raw_html = ? WHERE id = ?
           `, [
-            toSqlValue(fullMessage.text || fullMessage.preview),
-            toSqlValue(fullMessage.html),
+            values.raw_text,
+            values.raw_html,
             existing.id,
           ]);
           totalUpdated++;
@@ -151,13 +165,13 @@ newsletterRoutes.post('/sync', async (c) => {
             INSERT INTO newsletters (agentmail_id, from_address, from_name, subject, received_at, raw_text, raw_html)
             VALUES (?, ?, ?, ?, ?, ?, ?)
           `, [
-            toSqlValue(fullMessage.message_id),
-            toSqlValue(fromAddress),
-            toSqlValue(fromName),
-            toSqlValue(fullMessage.subject) || '(No subject)',
-            toSqlValue(timestamp),
-            toSqlValue(fullMessage.text || fullMessage.preview),
-            toSqlValue(fullMessage.html),
+            values.message_id,
+            values.from_address,
+            values.from_name,
+            values.subject,
+            values.timestamp,
+            values.raw_text,
+            values.raw_html,
           ]);
           totalSynced++;
         }
