@@ -117,24 +117,31 @@ newsletterRoutes.post('/sync', async (c) => {
         }
 
         // Parse from address (format: "Name <email>" or just "email")
-        const fromMatch = fullMessage.from.match(/^(.+?)\s*<(.+)>$/) || [null, null, fullMessage.from];
-        const fromName = fromMatch[1]?.trim() || null;
-        const fromAddress = fromMatch[2] || fullMessage.from;
+        const fromMatch = fullMessage.from?.match(/^(.+?)\s*<(.+)>$/) || [null, null, fullMessage.from];
+        const fromName = fromMatch[1]?.trim() ?? null;
+        const fromAddress = fromMatch[2] ?? fullMessage.from ?? 'unknown';
 
         // Ensure timestamp is a string (SQLite can't bind Date objects)
         const timestamp = typeof fullMessage.timestamp === 'string'
           ? fullMessage.timestamp
           : fullMessage.timestamp instanceof Date
             ? fullMessage.timestamp.toISOString()
-            : String(fullMessage.timestamp);
+            : fullMessage.timestamp ? String(fullMessage.timestamp) : new Date().toISOString();
+
+        // Helper to convert undefined to null (SQLite doesn't accept undefined)
+        const toSqlValue = (val: unknown): string | number | boolean | null => {
+          if (val === undefined || val === null) return null;
+          if (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean') return val;
+          return String(val);
+        };
 
         if (existing) {
           // Update existing newsletter with full content
           db.run(`
             UPDATE newsletters SET raw_text = ?, raw_html = ? WHERE id = ?
           `, [
-            fullMessage.text || fullMessage.preview || null,
-            fullMessage.html || null,
+            toSqlValue(fullMessage.text || fullMessage.preview),
+            toSqlValue(fullMessage.html),
             existing.id,
           ]);
           totalUpdated++;
@@ -144,13 +151,13 @@ newsletterRoutes.post('/sync', async (c) => {
             INSERT INTO newsletters (agentmail_id, from_address, from_name, subject, received_at, raw_text, raw_html)
             VALUES (?, ?, ?, ?, ?, ?, ?)
           `, [
-            fullMessage.message_id,
-            fromAddress,
-            fromName,
-            fullMessage.subject || '(No subject)',
-            timestamp,
-            fullMessage.text || fullMessage.preview || null,
-            fullMessage.html || null,
+            toSqlValue(fullMessage.message_id),
+            toSqlValue(fromAddress),
+            toSqlValue(fromName),
+            toSqlValue(fullMessage.subject) || '(No subject)',
+            toSqlValue(timestamp),
+            toSqlValue(fullMessage.text || fullMessage.preview),
+            toSqlValue(fullMessage.html),
           ]);
           totalSynced++;
         }
