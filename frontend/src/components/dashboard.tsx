@@ -87,6 +87,16 @@ export function Dashboard() {
     loadProcessingStatus();
   }, [loadNewsletters, loadProcessingStatus]);
 
+  // Refresh data on window focus
+  useEffect(() => {
+    const handleFocus = () => {
+      loadNewsletters();
+      loadProcessingStatus();
+    };
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, [loadNewsletters, loadProcessingStatus]);
+
   const handleSync = async (force = false) => {
     setSyncingType(force ? "force" : "new");
     try {

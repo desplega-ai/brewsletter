@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 
 function Spinner({ className = "" }: { className?: string }) {
@@ -54,6 +54,7 @@ import {
   getSchedulePresets,
   getScheduleDefaults,
   triggerSchedule,
+  getProcessingStatus,
   type DigestSchedule,
   type SchedulePreset,
   type ScheduleDefaults,
@@ -90,6 +91,13 @@ export function SchedulesManager() {
 
   useEffect(() => {
     loadData();
+  }, []);
+
+  // Refresh on window focus
+  useEffect(() => {
+    const handleFocus = () => loadData();
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
   }, []);
 
   const loadData = async () => {
@@ -217,15 +225,63 @@ export function SchedulesManager() {
     }
   };
 
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+      }
+    };
+  }, []);
+
   const handleTrigger = async (s: DigestSchedule) => {
     setTriggeringId(s.id);
     try {
       const result = await triggerSchedule(s.id);
-      toast.success(`Processing ${result.newsletterCount} newsletters. Check your email shortly!`);
-      loadData();
+      const currentProcessingId = result.processingId;
+      toast.success(`Processing ${result.newsletterCount} newsletters...`);
+
+      // Clear any existing poll
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+      }
+
+      // Poll for completion
+      let pollCount = 0;
+      const maxPolls = 60;
+
+      pollIntervalRef.current = setInterval(async () => {
+        pollCount++;
+        try {
+          const status = await getProcessingStatus();
+          const isOurProcessingDone = !status.isProcessing &&
+            status.lastProcessing?.id == currentProcessingId;
+          const processingFinished = !status.isProcessing;
+
+          if (isOurProcessingDone || pollCount >= maxPolls || processingFinished) {
+            if (pollIntervalRef.current) {
+              clearInterval(pollIntervalRef.current);
+              pollIntervalRef.current = null;
+            }
+            setTriggeringId(null);
+            loadData();
+
+            if (status.lastProcessing?.status === "completed") {
+              toast.success("Digest sent to your email!");
+            } else if (status.lastProcessing?.status === "failed") {
+              toast.error(status.lastProcessing.errorMessage || "Processing failed");
+            } else if (pollCount >= maxPolls) {
+              toast.error("Processing timed out");
+            }
+          }
+        } catch (err) {
+          console.error("Poll error:", err);
+        }
+      }, 2000);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to trigger schedule");
-    } finally {
       setTriggeringId(null);
     }
   };

@@ -91,7 +91,14 @@ newsletterRoutes.post('/sync', async (c) => {
     do {
       const response = await fetchMessages(pageToken);
 
+      const inboxEmail = process.env.AGENTMAIL_INBOX_EMAIL || 'news@agentmail.to';
+
       for (const message of response.messages) {
+        // Skip emails sent by the inbox (outgoing emails)
+        if (message.from.includes(inboxEmail)) {
+          continue;
+        }
+
         // Check if already exists
         const existing = db.query('SELECT id, raw_text FROM newsletters WHERE agentmail_id = ?').get(message.message_id) as any;
 
@@ -114,6 +121,13 @@ newsletterRoutes.post('/sync', async (c) => {
         const fromName = fromMatch[1]?.trim() || null;
         const fromAddress = fromMatch[2] || fullMessage.from;
 
+        // Ensure timestamp is a string (SQLite can't bind Date objects)
+        const timestamp = typeof fullMessage.timestamp === 'string'
+          ? fullMessage.timestamp
+          : fullMessage.timestamp instanceof Date
+            ? fullMessage.timestamp.toISOString()
+            : String(fullMessage.timestamp);
+
         if (existing) {
           // Update existing newsletter with full content
           db.run(`
@@ -134,7 +148,7 @@ newsletterRoutes.post('/sync', async (c) => {
             fromAddress,
             fromName,
             fullMessage.subject || '(No subject)',
-            fullMessage.timestamp,
+            timestamp,
             fullMessage.text || fullMessage.preview || null,
             fullMessage.html || null,
           ]);

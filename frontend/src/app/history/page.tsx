@@ -44,6 +44,21 @@ function HistoryContent() {
     }
   }, [isConnected, scheduleId]);
 
+  // Auto-refresh every 10 seconds and on window focus
+  useEffect(() => {
+    if (!isConnected) return;
+
+    const interval = setInterval(loadHistory, 10000);
+
+    const handleFocus = () => loadHistory();
+    window.addEventListener("focus", handleFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [isConnected, scheduleId]);
+
   const checkConnection = async () => {
     const config = getStoredConfig();
     if (config.url && config.key) {
