@@ -1,6 +1,9 @@
 FROM oven/bun:1 AS base
 WORKDIR /app
 
+# Install CA certificates for SSL
+RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+
 # Install dependencies
 FROM base AS deps
 COPY package.json bun.lock ./

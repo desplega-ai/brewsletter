@@ -51,4 +51,11 @@ function runMigrations(database: Database): void {
   }
 }
 
+export function closeDb(): void {
+  if (db) {
+    db.close();
+    console.log('Database connection closed');
+  }
+}
+
 export { db };

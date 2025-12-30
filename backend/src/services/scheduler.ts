@@ -29,6 +29,7 @@ interface Newsletter {
 }
 
 const CHECK_INTERVAL = 60000; // Check every minute
+let schedulerInterval: ReturnType<typeof setInterval> | null = null;
 
 export function startScheduler(): void {
   console.log('Scheduler started');
@@ -37,7 +38,15 @@ export function startScheduler(): void {
   checkAndRunSchedules();
 
   // Then check every minute
-  setInterval(checkAndRunSchedules, CHECK_INTERVAL);
+  schedulerInterval = setInterval(checkAndRunSchedules, CHECK_INTERVAL);
+}
+
+export function stopScheduler(): void {
+  if (schedulerInterval) {
+    clearInterval(schedulerInterval);
+    schedulerInterval = null;
+    console.log('Scheduler stopped');
+  }
 }
 
 async function checkAndRunSchedules(): Promise<void> {
@@ -74,10 +83,9 @@ async function checkAndRunSchedules(): Promise<void> {
 
 export async function runScheduledDigest(schedule: Schedule): Promise<{ processingId: number; newsletterCount: number }> {
   const db = getDb();
-  const topics = JSON.parse(schedule.topics) as string[];
+  const scheduleTopics = JSON.parse(schedule.topics) as string[];
 
-  // Find newsletters matching the schedule's topics that haven't been included in a digest for this schedule
-  // For simplicity, we'll look at newsletters from the last 7 days
+  // Find newsletters from the last 7 days
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
   const newsletters = db.query(`
@@ -87,33 +95,27 @@ export async function runScheduledDigest(schedule: Schedule): Promise<{ processi
     ORDER BY received_at DESC
   `).all(sevenDaysAgo) as Newsletter[];
 
-  // Filter newsletters by topics
-  const matchingNewsletters = newsletters.filter(n => {
-    if (!n.topics) return false;
-    const newsletterTopics = JSON.parse(n.topics) as string[];
-    return topics.some(t =>
-      newsletterTopics.some(nt =>
-        nt.toLowerCase().includes(t.toLowerCase()) ||
-        t.toLowerCase().includes(nt.toLowerCase())
-      )
-    );
-  });
-
-  if (matchingNewsletters.length === 0) {
-    console.log(`No newsletters matching topics for "${schedule.name}"`);
-    throw new Error(`No newsletters matching topics for "${schedule.name}"`);
+  if (newsletters.length === 0) {
+    console.log(`No newsletters in the last 7 days for "${schedule.name}"`);
+    throw new Error(`No newsletters in the last 7 days`);
   }
 
-  // Extract content from newsletters that haven't been extracted yet
+  // First, extract content/topics for any newsletters that don't have them yet
   const extractedNewsletters = [];
 
-  for (const newsletter of matchingNewsletters) {
+  for (const newsletter of newsletters) {
     let content = newsletter.extracted_content
       ? JSON.parse(newsletter.extracted_content)
       : null;
 
+    // Extract if not already done
     if (!content) {
       const body = newsletter.raw_text || stripHtml(newsletter.raw_html || '');
+
+      if (!body || body.length < 50) {
+        console.log(`Skipping newsletter ${newsletter.id}: no content`);
+        continue;
+      }
 
       try {
         content = await b.ExtractNewsletter(
@@ -122,26 +124,38 @@ export async function runScheduledDigest(schedule: Schedule): Promise<{ processi
           newsletter.from_address
         );
 
-        // Store extracted content
+        // Store extracted content and topics
         db.run(
           `UPDATE newsletters SET extracted_content = ?, topics = ? WHERE id = ?`,
           [JSON.stringify(content), JSON.stringify(content.topics), newsletter.id]
         );
+        console.log(`Extracted topics for newsletter ${newsletter.id}: ${content.topics.join(', ')}`);
       } catch (error) {
         console.error(`Failed to extract newsletter ${newsletter.id}:`, error);
         continue;
       }
     }
 
-    extractedNewsletters.push({
-      id: newsletter.id,
-      ...content,
-    });
+    // Now check if this newsletter matches the schedule's topics
+    const newsletterTopics = content.topics || [];
+    const matches = scheduleTopics.some(scheduleTopic =>
+      newsletterTopics.some((nt: string) =>
+        nt.toLowerCase().includes(scheduleTopic.toLowerCase()) ||
+        scheduleTopic.toLowerCase().includes(nt.toLowerCase())
+      )
+    );
+
+    if (matches) {
+      extractedNewsletters.push({
+        id: newsletter.id,
+        ...content,
+      });
+    }
   }
 
   if (extractedNewsletters.length === 0) {
-    console.log(`No content extracted for "${schedule.name}"`);
-    throw new Error(`No content could be extracted for "${schedule.name}"`);
+    console.log(`No newsletters matching topics [${scheduleTopics.join(', ')}] for "${schedule.name}"`);
+    throw new Error(`No newsletters matching topics: ${scheduleTopics.join(', ')}. Try broader topics or wait for more newsletters.`);
   }
 
   // Generate digest
