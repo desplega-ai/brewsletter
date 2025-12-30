@@ -28,8 +28,14 @@ interface Newsletter {
   topics: string | null;
 }
 
-const CHECK_INTERVAL = 60000; // Check every minute
+import { fetchMessages, getMessage, type AgentMailMessage } from './agentmail';
+import { processNewsletters } from './summarizer';
+
+const CHECK_INTERVAL = 60000; // Check schedules every minute
+const SYNC_INTERVAL = 60 * 60 * 1000; // Sync newsletters every hour
+
 let schedulerInterval: ReturnType<typeof setInterval> | null = null;
+let syncInterval: ReturnType<typeof setInterval> | null = null;
 
 export function startScheduler(): void {
   console.log('Scheduler started');
@@ -39,13 +45,124 @@ export function startScheduler(): void {
 
   // Then check every minute
   schedulerInterval = setInterval(checkAndRunSchedules, CHECK_INTERVAL);
+
+  // Auto-sync newsletters every hour
+  syncInterval = setInterval(autoSyncAndProcess, SYNC_INTERVAL);
+
+  // Also run initial sync after 10 seconds (give server time to start)
+  setTimeout(autoSyncAndProcess, 10000);
 }
 
 export function stopScheduler(): void {
   if (schedulerInterval) {
     clearInterval(schedulerInterval);
     schedulerInterval = null;
-    console.log('Scheduler stopped');
+  }
+  if (syncInterval) {
+    clearInterval(syncInterval);
+    syncInterval = null;
+  }
+  console.log('Scheduler stopped');
+}
+
+// Auto-sync newsletters from AgentMail and extract topics
+async function autoSyncAndProcess(): Promise<void> {
+  console.log('Starting auto-sync...');
+
+  try {
+    const db = getDb();
+    const inboxEmail = process.env.AGENTMAIL_INBOX_EMAIL || 'news@agentmail.to';
+    let pageToken: string | undefined;
+    let totalSynced = 0;
+
+    do {
+      const response = await fetchMessages(pageToken);
+
+      for (const message of response.messages) {
+        // Skip emails sent by the inbox (outgoing emails)
+        if (message.from.includes(inboxEmail)) {
+          continue;
+        }
+
+        // Check if already exists
+        const existing = db.query('SELECT id FROM newsletters WHERE agentmail_id = ?').get(message.message_id);
+
+        if (existing) {
+          continue; // Already synced
+        }
+
+        // Fetch full message content
+        let fullMessage: AgentMailMessage;
+        try {
+          fullMessage = await getMessage(message.message_id);
+        } catch (err) {
+          console.error(`Failed to fetch message ${message.message_id}:`, err);
+          fullMessage = message;
+        }
+
+        // Helper to safely convert values for SQLite
+        const toSql = (val: unknown): string | number | null => {
+          if (val === undefined || val === null) return null;
+          if (typeof val === 'string') return val;
+          if (typeof val === 'number') return val;
+          if (typeof val === 'boolean') return val ? 1 : 0;
+          if (val instanceof Date) return val.toISOString();
+          return String(val);
+        };
+
+        // Parse from address
+        const fromMatch = fullMessage.from?.match(/^(.+?)\s*<(.+)>$/) || [null, null, fullMessage.from];
+        const fromName = fromMatch[1]?.trim() ?? null;
+        const fromAddress = fromMatch[2] ?? fullMessage.from ?? 'unknown';
+
+        const timestamp = typeof fullMessage.timestamp === 'string'
+          ? fullMessage.timestamp
+          : fullMessage.timestamp instanceof Date
+            ? fullMessage.timestamp.toISOString()
+            : new Date().toISOString();
+
+        try {
+          db.run(`
+            INSERT INTO newsletters (agentmail_id, from_address, from_name, subject, received_at, raw_text, raw_html)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+          `, [
+            toSql(fullMessage.message_id),
+            toSql(fromAddress),
+            toSql(fromName),
+            toSql(fullMessage.subject) || '(No subject)',
+            toSql(timestamp),
+            toSql(fullMessage.text || fullMessage.preview),
+            toSql(fullMessage.html),
+          ]);
+          totalSynced++;
+        } catch (err) {
+          console.error(`Failed to insert newsletter ${message.message_id}:`, err);
+        }
+      }
+
+      pageToken = response.next_page_token || undefined;
+    } while (pageToken);
+
+    console.log(`Auto-sync complete: ${totalSynced} new newsletters`);
+
+    // Now auto-process any unprocessed newsletters
+    if (totalSynced > 0) {
+      const unprocessed = db.query('SELECT COUNT(*) as count FROM newsletters WHERE is_processed = 0').get() as { count: number };
+      if (unprocessed.count > 0) {
+        console.log(`Auto-processing ${unprocessed.count} unprocessed newsletters...`);
+        try {
+          await processNewsletters();
+        } catch (err) {
+          // Ignore "no newsletters to process" error
+          if (!(err instanceof Error && err.message.includes('No newsletters'))) {
+            console.error('Auto-process error:', err);
+          }
+        }
+      }
+    }
+
+  } catch (error) {
+    console.error('Auto-sync error:', error);
   }
 }
 

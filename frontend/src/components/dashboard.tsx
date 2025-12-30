@@ -118,7 +118,7 @@ export function Dashboard() {
     try {
       const result = await generateSummary(undefined, forceAll);
       const currentProcessingId = result.processingId;
-      toast.success(`Processing ${result.newsletterCount} newsletters...`);
+      toast.success(`Extracting topics from ${result.newsletterCount} newsletters...`);
 
       // Clear any existing poll
       if (pollIntervalRef.current) {
@@ -153,7 +153,7 @@ export function Dashboard() {
             // Show appropriate toast based on status
             if (status.lastProcessing?.id == currentProcessingId) {
               if (status.lastProcessing?.status === "completed") {
-                toast.success("Summary sent to your email!");
+                toast.success("Newsletters processed! Topics extracted.");
               } else if (status.lastProcessing?.status === "failed") {
                 toast.error(status.lastProcessing.errorMessage || "Processing failed");
               }
@@ -162,7 +162,7 @@ export function Dashboard() {
             } else if (processingFinished && status.lastProcessing) {
               // Processing finished but ID doesn't match - still show result
               if (status.lastProcessing.status === "completed") {
-                toast.success("Summary sent to your email!");
+                toast.success("Newsletters processed! Topics extracted.");
               } else if (status.lastProcessing.status === "failed") {
                 toast.error(status.lastProcessing.errorMessage || "Processing failed");
               }
@@ -216,7 +216,7 @@ export function Dashboard() {
             disabled={isGenerating || newsletters.length === 0}
           >
             {isGenerating && <Spinner />}
-            {isGenerating ? "Generating..." : unprocessedCount > 0 ? "Generate Summary" : "Regenerate Summary"}
+            {isGenerating ? "Processing..." : unprocessedCount > 0 ? "Process Newsletters" : "Reprocess All"}
           </Button>
         </div>
       </div>

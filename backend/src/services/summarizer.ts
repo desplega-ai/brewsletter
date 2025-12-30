@@ -1,6 +1,5 @@
 import { b } from '../../baml_client';
 import { getDb } from '../db';
-import { sendEmail } from './agentmail';
 
 interface Newsletter {
   id: number;
@@ -12,26 +11,12 @@ interface Newsletter {
   extracted_content: string | null;
 }
 
-interface Preferences {
-  delivery_email: string;
-  interests: string;
-  format_preference: string;
-  summary_length: string;
-  include_links: number;
-}
-
+// Process newsletters: extract topics only, no email sending
 export async function processNewsletters(newsletterIds?: number[], forceAll?: boolean): Promise<{
   processingId: number;
   newsletterCount: number;
 }> {
   const db = getDb();
-
-  // Get preferences
-  const prefs = db.query('SELECT * FROM preferences WHERE id = 1').get() as Preferences | null;
-
-  if (!prefs) {
-    throw new Error('Preferences not set. Please configure your delivery email first.');
-  }
 
   // Get newsletters to process
   let newsletters: Newsletter[];
@@ -67,7 +52,7 @@ export async function processNewsletters(newsletterIds?: number[], forceAll?: bo
   const processingId = Number(result.lastInsertRowid);
 
   // Process in background
-  processInBackground(processingId, newsletters, prefs).catch(err => {
+  processInBackground(processingId, newsletters).catch(err => {
     console.error('Background processing error:', err);
     db.run(
       `UPDATE processing_history SET status = 'failed', error_message = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?`,
@@ -80,77 +65,56 @@ export async function processNewsletters(newsletterIds?: number[], forceAll?: bo
 
 async function processInBackground(
   processingId: number,
-  newsletters: Newsletter[],
-  prefs: Preferences
+  newsletters: Newsletter[]
 ): Promise<void> {
   const db = getDb();
 
   try {
-    // Step 1: Extract content from newsletters that haven't been extracted yet
-    const extractedNewsletters = [];
+    let processedCount = 0;
 
     for (const newsletter of newsletters) {
-      let content = newsletter.extracted_content
-        ? JSON.parse(newsletter.extracted_content)
-        : null;
+      // Skip if already has extracted content
+      if (newsletter.extracted_content) {
+        processedCount++;
+        continue;
+      }
 
-      if (!content) {
-        const body = newsletter.raw_text || stripHtml(newsletter.raw_html || '');
+      const body = newsletter.raw_text || stripHtml(newsletter.raw_html || '');
 
-        content = await b.ExtractNewsletter(
+      if (!body || body.length < 50) {
+        console.log(`Skipping newsletter ${newsletter.id}: insufficient content`);
+        continue;
+      }
+
+      try {
+        const content = await b.ExtractNewsletter(
           newsletter.subject,
-          body.slice(0, 15000), // Limit body size
+          body.slice(0, 15000),
           newsletter.from_address
         );
 
-        // Store extracted content
+        // Store extracted content and topics
         db.run(
-          `UPDATE newsletters SET extracted_content = ?, topics = ? WHERE id = ?`,
+          `UPDATE newsletters SET extracted_content = ?, topics = ?, is_processed = 1 WHERE id = ?`,
           [JSON.stringify(content), JSON.stringify(content.topics), newsletter.id]
         );
-      }
 
-      extractedNewsletters.push({
-        id: newsletter.id,
-        ...content,
-      });
+        console.log(`Extracted topics for newsletter ${newsletter.id}: ${content.topics.join(', ')}`);
+        processedCount++;
+      } catch (error) {
+        console.error(`Failed to extract newsletter ${newsletter.id}:`, error);
+      }
     }
 
-    // Step 2: Generate digest summary
-    const interests = JSON.parse(prefs.interests || '[]');
-    const digest = await b.GenerateDigest(
-      JSON.stringify(extractedNewsletters),
-      interests,
-      prefs.summary_length,
-      Boolean(prefs.include_links),
-      undefined // custom_prompt not supported for on-demand processing
-    );
-
-    // Step 3: Format as HTML email
-    const html = formatDigestHtml(digest);
-    const text = formatDigestText(digest);
-
-    // Step 4: Send email via AgentMail
-    const sentResult = await sendEmail(
-      prefs.delivery_email,
-      `Brewsletter Digest - ${digest.periodCovered}`,
-      html,
-      text
-    );
-
-    // Step 5: Update processing record
+    // Update processing record (no email sent, just extraction)
     db.run(
       `UPDATE processing_history
-       SET status = 'completed', completed_at = CURRENT_TIMESTAMP,
-           summary_html = ?, summary_text = ?, sent_to_email = ?, agentmail_sent_id = ?
+       SET status = 'completed', completed_at = CURRENT_TIMESTAMP
        WHERE id = ?`,
-      [html, text, prefs.delivery_email, sentResult.message_id, processingId]
+      [processingId]
     );
 
-    // Mark newsletters as processed
-    const newsletterIds = newsletters.map(n => n.id);
-    const placeholders = newsletterIds.map(() => '?').join(',');
-    db.run(`UPDATE newsletters SET is_processed = 1 WHERE id IN (${placeholders})`, ...newsletterIds);
+    console.log(`Processing complete: ${processedCount}/${newsletters.length} newsletters extracted`);
 
   } catch (error) {
     throw error;
@@ -164,93 +128,6 @@ function stripHtml(html: string): string {
     .replace(/<[^>]+>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-}
-
-function formatDigestHtml(digest: any): string {
-  let html = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
-    h1 { color: #1a1a1a; border-bottom: 2px solid #eee; padding-bottom: 10px; }
-    h2 { color: #444; margin-top: 30px; }
-    .highlight { background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 15px 0; }
-    .newsletter { border-left: 3px solid #007bff; padding-left: 15px; margin: 20px 0; }
-    .source { font-weight: bold; color: #007bff; }
-    .link { color: #007bff; text-decoration: none; }
-    .link:hover { text-decoration: underline; }
-    .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee; font-size: 14px; color: #666; }
-  </style>
-</head>
-<body>
-  <h1>Brewsletter Digest</h1>
-  <p><em>${digest.periodCovered}</em></p>
-
-  <div class="highlight">
-    <h2>Highlights</h2>
-    <ul>
-      ${digest.highlights.map((h: string) => `<li>${h}</li>`).join('\n      ')}
-    </ul>
-  </div>
-
-  <h2>Newsletter Summaries</h2>
-  ${digest.newsletters.map((n: any) => `
-  <div class="newsletter">
-    <p class="source">${n.source}</p>
-    <h3>${n.headline}</h3>
-    <p>${n.summary}</p>
-    ${n.topLinks && n.topLinks.length > 0 ? `
-    <p><strong>Links:</strong></p>
-    <ul>
-      ${n.topLinks.map((l: any) => `<li><a class="link" href="${l.url || '#'}">${l.title}</a></li>`).join('\n      ')}
-    </ul>
-    ` : ''}
-  </div>
-  `).join('\n')}
-
-  <div class="footer">
-    <p>${digest.closingNote}</p>
-    <p><em>Generated by Your-News</em></p>
-  </div>
-</body>
-</html>`;
-
-  return html;
-}
-
-function formatDigestText(digest: any): string {
-  let text = `YOUR NEWSLETTER DIGEST\n`;
-  text += `${digest.periodCovered}\n\n`;
-  text += `HIGHLIGHTS\n`;
-  text += `${'='.repeat(40)}\n`;
-  digest.highlights.forEach((h: string) => {
-    text += `• ${h}\n`;
-  });
-  text += `\n`;
-
-  text += `NEWSLETTER SUMMARIES\n`;
-  text += `${'='.repeat(40)}\n\n`;
-
-  digest.newsletters.forEach((n: any) => {
-    text += `[${n.source}]\n`;
-    text += `${n.headline}\n`;
-    text += `-`.repeat(30) + `\n`;
-    text += `${n.summary}\n`;
-    if (n.topLinks && n.topLinks.length > 0) {
-      text += `\nLinks:\n`;
-      n.topLinks.forEach((l: any) => {
-        text += `  • ${l.title}: ${l.url || 'N/A'}\n`;
-      });
-    }
-    text += `\n`;
-  });
-
-  text += `\n${digest.closingNote}\n`;
-  text += `\n---\nGenerated by Your-News\n`;
-
-  return text;
 }
 
 export async function getProcessingStatus(processingId?: number): Promise<any> {
