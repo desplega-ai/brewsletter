@@ -3,7 +3,7 @@ WORKDIR /app
 
 # Install dependencies
 FROM base AS deps
-COPY package.json bun.lockb ./
+COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile
 
 # Build stage
@@ -23,6 +23,9 @@ COPY --from=build /app/baml_client ./baml_client
 COPY --from=build /app/package.json ./
 
 ENV NODE_ENV=production
+ENV DATABASE_PATH=/app/data/database.sqlite
+
+VOLUME /app/data
 
 EXPOSE 5101
 
