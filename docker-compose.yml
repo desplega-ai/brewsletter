@@ -1,0 +1,22 @@
+services:
+  backend:
+    build: ./backend
+    container_name: brewsletter-backend
+    ports:
+      - "5101:5101"
+    environment:
+      - PORT=5101
+      - DATABASE_PATH=/app/data/brewsletter.db
+    env_file:
+      - .env
+    volumes:
+      - brewsletter-data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5101/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  brewsletter-data:

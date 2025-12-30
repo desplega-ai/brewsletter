@@ -1,0 +1,23 @@
+{
+  "name": "brewsletter-backend",
+  "module": "src/index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "start": "bun src/index.ts",
+    "baml:generate": "bunx baml-cli generate"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@boundaryml/baml": "^0.215.2",
+    "agentmail": "^0.1.15",
+    "cron-parser": "^5.4.0",
+    "hono": "^4.11.3"
+  }
+}
