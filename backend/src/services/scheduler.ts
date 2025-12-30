@@ -278,7 +278,7 @@ export async function runScheduledDigest(schedule: Schedule): Promise<{ processi
   // Generate digest
   const digest = await b.GenerateDigest(
     JSON.stringify(extractedNewsletters),
-    topics,
+    scheduleTopics,
     schedule.summary_length,
     Boolean(schedule.include_links),
     schedule.custom_prompt || undefined
