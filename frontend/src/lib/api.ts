@@ -201,10 +201,10 @@ export interface ProcessingDetail {
   scheduleName?: string | null;
 }
 
-export async function generateSummary(newsletterIds?: number[], forceAll?: boolean): Promise<{ success: boolean; processingId: number; newsletterCount: number }> {
+export async function generateSummary(newsletterIds?: number[], forceAll?: boolean, forceReprocess?: boolean): Promise<{ success: boolean; processingId: number; newsletterCount: number }> {
   return fetchApi('/api/processing/generate', {
     method: 'POST',
-    body: JSON.stringify({ newsletterIds, forceAll }),
+    body: JSON.stringify({ newsletterIds, forceAll, forceReprocess }),
   });
 }
 

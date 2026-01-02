@@ -116,7 +116,7 @@ export function Dashboard() {
     setIsGenerating(true);
     const forceAll = unprocessedCount === 0; // Regenerate all if none unprocessed
     try {
-      const result = await generateSummary(undefined, forceAll);
+      const result = await generateSummary(undefined, forceAll, forceAll);
       const currentProcessingId = result.processingId;
       toast.success(`Extracting topics from ${result.newsletterCount} newsletters...`);
 

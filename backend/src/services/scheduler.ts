@@ -237,7 +237,7 @@ export async function runScheduledDigest(schedule: Schedule): Promise<{ processi
       try {
         content = await b.ExtractNewsletter(
           newsletter.subject,
-          body.slice(0, 15000),
+          body.slice(0, 250_000),
           newsletter.from_address
         );
 

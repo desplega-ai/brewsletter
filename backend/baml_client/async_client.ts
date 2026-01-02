@@ -145,7 +145,7 @@ export type RecursivePartialNull<T> = MovedRecursivePartialNull<T>
             }
             
         async GenerateDigest(
-        newsletters_json: string,interests: string[],summary_length: string,include_links: boolean,
+        newsletters_json: string,interests: string[],summary_length: string,include_links: boolean,custom_prompt?: string | null,
         __baml_options__?: BamlCallOptions<never>
         ): Promise<types.DigestSummary> {
           try {
@@ -159,7 +159,7 @@ export type RecursivePartialNull<T> = MovedRecursivePartialNull<T>
           // Check if onTick is provided - route through streaming if so
           if (__options__.onTick) {
           const __stream__ = this.stream.GenerateDigest(
-          newsletters_json,interests,summary_length,include_links,
+          newsletters_json,interests,summary_length,include_links,custom_prompt,
           __baml_options__
           );
 
@@ -175,7 +175,7 @@ export type RecursivePartialNull<T> = MovedRecursivePartialNull<T>
             const __raw__ = await this.runtime.callFunction(
             "GenerateDigest",
             {
-            "newsletters_json": newsletters_json,"interests": interests,"summary_length": summary_length,"include_links": include_links
+            "newsletters_json": newsletters_json,"interests": interests,"summary_length": summary_length,"include_links": include_links,"custom_prompt": custom_prompt?? null
             },
             this.ctxManager.cloneContext(),
             __options__.tb?.__tb(),
@@ -273,7 +273,7 @@ export type RecursivePartialNull<T> = MovedRecursivePartialNull<T>
                   }
                   
             GenerateDigest(
-            newsletters_json: string,interests: string[],summary_length: string,include_links: boolean,
+            newsletters_json: string,interests: string[],summary_length: string,include_links: boolean,custom_prompt?: string | null,
             __baml_options__?: BamlCallOptions<never>
             ): BamlStream<partial_types.DigestSummary, types.DigestSummary>
               {
@@ -314,7 +314,7 @@ export type RecursivePartialNull<T> = MovedRecursivePartialNull<T>
                 const __raw__ = this.runtime.streamFunction(
                 "GenerateDigest",
                 {
-                "newsletters_json": newsletters_json,"interests": interests,"summary_length": summary_length,"include_links": include_links
+                "newsletters_json": newsletters_json,"interests": interests,"summary_length": summary_length,"include_links": include_links,"custom_prompt": custom_prompt ?? null
                 },
                 undefined,
                 this.ctxManager.cloneContext(),

@@ -8,9 +8,9 @@ export const processingRoutes = new Hono();
 processingRoutes.post('/generate', async (c) => {
   try {
     const body = await c.req.json().catch(() => ({}));
-    const { newsletterIds, forceAll } = body;
+    const { newsletterIds, forceAll, forceReprocess } = body;
 
-    const result = await processNewsletters(newsletterIds, forceAll);
+    const result = await processNewsletters(newsletterIds, forceAll, forceReprocess);
 
     return c.json({
       success: true,

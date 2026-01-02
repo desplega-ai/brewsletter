@@ -101,7 +101,7 @@ export default function NewsletterPage({
     if (!newsletter) return;
     setIsProcessing(true);
     try {
-      const result = await generateSummary([newsletter.id]);
+      const result = await generateSummary([newsletter.id], false, newsletter.isProcessed);
       toast.success(`Processing started. Check your email shortly!`);
       // Reload to get updated processed status
       await loadNewsletter();

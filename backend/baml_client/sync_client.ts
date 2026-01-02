@@ -139,7 +139,7 @@ export class BamlSyncClient {
   }
   
   GenerateDigest(
-      newsletters_json: string,interests: string[],summary_length: string,include_links: boolean,
+      newsletters_json: string,interests: string[],summary_length: string,include_links: boolean,custom_prompt?: string | null,
       __baml_options__?: BamlCallOptions<never>
   ): types.DigestSummary {
     try {
@@ -163,7 +163,7 @@ export class BamlSyncClient {
       const __raw__ = this.runtime.callFunctionSync(
         "GenerateDigest",
         {
-          "newsletters_json": newsletters_json,"interests": interests,"summary_length": summary_length,"include_links": include_links
+          "newsletters_json": newsletters_json,"interests": interests,"summary_length": summary_length,"include_links": include_links,"custom_prompt": custom_prompt?? null
         },
         this.ctxManager.cloneContext(),
         __options__.tb?.__tb(),

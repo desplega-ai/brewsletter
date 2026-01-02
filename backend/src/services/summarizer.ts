@@ -12,7 +12,7 @@ interface Newsletter {
 }
 
 // Process newsletters: extract topics only, no email sending
-export async function processNewsletters(newsletterIds?: number[], forceAll?: boolean): Promise<{
+export async function processNewsletters(newsletterIds?: number[], forceAll?: boolean, forceReprocess?: boolean): Promise<{
   processingId: number;
   newsletterCount: number;
 }> {
@@ -52,7 +52,7 @@ export async function processNewsletters(newsletterIds?: number[], forceAll?: bo
   const processingId = Number(result.lastInsertRowid);
 
   // Process in background
-  processInBackground(processingId, newsletters).catch(err => {
+  processInBackground(processingId, newsletters, forceReprocess).catch(err => {
     console.error('Background processing error:', err);
     db.run(
       `UPDATE processing_history SET status = 'failed', error_message = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?`,
@@ -65,7 +65,8 @@ export async function processNewsletters(newsletterIds?: number[], forceAll?: bo
 
 async function processInBackground(
   processingId: number,
-  newsletters: Newsletter[]
+  newsletters: Newsletter[],
+  forceReprocess?: boolean
 ): Promise<void> {
   const db = getDb();
 
@@ -73,8 +74,8 @@ async function processInBackground(
     let processedCount = 0;
 
     for (const newsletter of newsletters) {
-      // Skip if already has extracted content
-      if (newsletter.extracted_content) {
+      // Skip if already has extracted content (unless force reprocessing)
+      if (newsletter.extracted_content && !forceReprocess) {
         processedCount++;
         continue;
       }
@@ -89,7 +90,7 @@ async function processInBackground(
       try {
         const content = await b.ExtractNewsletter(
           newsletter.subject,
-          body.slice(0, 15000),
+          body.slice(0, 100_000),
           newsletter.from_address
         );
 

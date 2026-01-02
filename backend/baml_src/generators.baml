@@ -1,5 +1,5 @@
 generator typescript {
   output_type "typescript"
-  output_dir "../baml_client"
+  output_dir ".."
   version "0.215.2"
 }
