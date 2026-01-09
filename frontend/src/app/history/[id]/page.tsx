@@ -29,42 +29,40 @@ export default function ProcessingDetailPage({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const checkConnection = async () => {
+      const config = getStoredConfig();
+      if (config.url && config.key) {
+        try {
+          await validateApiKey();
+          setIsConnected(true);
+        } catch {
+          router.push("/");
+        }
+      } else {
+        router.push("/");
+      }
+      setIsChecking(false);
+    };
     checkConnection();
-  }, []);
+  }, [router]);
 
   useEffect(() => {
+    const loadDetail = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const result = await getProcessingDetail(parseInt(id));
+        setDetail(result);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load details");
+      } finally {
+        setIsLoading(false);
+      }
+    };
     if (isConnected && id) {
       loadDetail();
     }
   }, [isConnected, id]);
-
-  const checkConnection = async () => {
-    const config = getStoredConfig();
-    if (config.url && config.key) {
-      try {
-        await validateApiKey();
-        setIsConnected(true);
-      } catch {
-        router.push("/");
-      }
-    } else {
-      router.push("/");
-    }
-    setIsChecking(false);
-  };
-
-  const loadDetail = async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const result = await getProcessingDetail(parseInt(id));
-      setDetail(result);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load details");
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const handleDisconnect = () => {
     clearApiConfig();

@@ -16,6 +16,16 @@ import {
 } from "@/lib/api";
 import { toast } from "sonner";
 
+interface ExtractedSection {
+  heading: string;
+  summary: string;
+}
+
+interface ExtractedLink {
+  title: string;
+  url?: string;
+}
+
 function Spinner({ className = "" }: { className?: string }) {
   return (
     <svg
@@ -56,41 +66,39 @@ export default function NewsletterPage({
   const [isProcessing, setIsProcessing] = useState(false);
 
   useEffect(() => {
+    const checkConnection = async () => {
+      const config = getStoredConfig();
+      if (config.url && config.key) {
+        try {
+          await validateApiKey();
+          setIsConnected(true);
+        } catch {
+          router.push("/");
+        }
+      } else {
+        router.push("/");
+      }
+      setIsChecking(false);
+    };
     checkConnection();
-  }, []);
+  }, [router]);
 
   useEffect(() => {
+    const loadNewsletter = async () => {
+      try {
+        const data = await getNewsletter(parseInt(id));
+        setNewsletter(data);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Failed to load newsletter");
+        router.push("/");
+      } finally {
+        setIsLoading(false);
+      }
+    };
     if (isConnected && id) {
       loadNewsletter();
     }
-  }, [isConnected, id]);
-
-  const checkConnection = async () => {
-    const config = getStoredConfig();
-    if (config.url && config.key) {
-      try {
-        await validateApiKey();
-        setIsConnected(true);
-      } catch {
-        router.push("/");
-      }
-    } else {
-      router.push("/");
-    }
-    setIsChecking(false);
-  };
-
-  const loadNewsletter = async () => {
-    try {
-      const data = await getNewsletter(parseInt(id));
-      setNewsletter(data);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to load newsletter");
-      router.push("/");
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  }, [isConnected, id, router]);
 
   const handleDisconnect = () => {
     clearApiConfig();
@@ -101,10 +109,11 @@ export default function NewsletterPage({
     if (!newsletter) return;
     setIsProcessing(true);
     try {
-      const result = await generateSummary([newsletter.id], false, newsletter.isProcessed);
+      await generateSummary([newsletter.id], false, newsletter.isProcessed);
       toast.success(`Processing started. Check your email shortly!`);
       // Reload to get updated processed status
-      await loadNewsletter();
+      const data = await getNewsletter(parseInt(id));
+      setNewsletter(data);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to process newsletter");
     } finally {
@@ -222,7 +231,7 @@ export default function NewsletterPage({
                       <div className="space-y-2">
                         <h3 className="text-sm font-medium">Sections</h3>
                         <div className="space-y-3">
-                          {newsletter.extractedContent.sections.map((section: any, i: number) => (
+                          {newsletter.extractedContent.sections.map((section: ExtractedSection, i: number) => (
                             <div key={i} className="border-l-2 border-muted pl-4">
                               <h4 className="font-medium text-sm">{section.heading}</h4>
                               <p className="text-sm text-muted-foreground">{section.summary}</p>
@@ -236,7 +245,7 @@ export default function NewsletterPage({
                       <div className="space-y-2">
                         <h3 className="text-sm font-medium">Links</h3>
                         <ul className="space-y-1 text-sm">
-                          {newsletter.extractedContent.links.map((link: any, i: number) => (
+                          {newsletter.extractedContent.links.map((link: ExtractedLink, i: number) => (
                             <li key={i}>
                               {link.url ? (
                                 <a

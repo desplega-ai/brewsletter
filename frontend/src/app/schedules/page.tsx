@@ -12,23 +12,22 @@ export default function SchedulesPage() {
   const [isChecking, setIsChecking] = useState(true);
 
   useEffect(() => {
-    checkConnection();
-  }, []);
-
-  const checkConnection = async () => {
-    const config = getStoredConfig();
-    if (config.url && config.key) {
-      try {
-        await validateApiKey();
-        setIsConnected(true);
-      } catch {
+    const checkConnection = async () => {
+      const config = getStoredConfig();
+      if (config.url && config.key) {
+        try {
+          await validateApiKey();
+          setIsConnected(true);
+        } catch {
+          router.push("/");
+        }
+      } else {
         router.push("/");
       }
-    } else {
-      router.push("/");
-    }
-    setIsChecking(false);
-  };
+      setIsChecking(false);
+    };
+    checkConnection();
+  }, [router]);
 
   const handleDisconnect = () => {
     clearApiConfig();

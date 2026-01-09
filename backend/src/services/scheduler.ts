@@ -115,11 +115,7 @@ async function autoSyncAndProcess(): Promise<void> {
         const fromName = fromMatch[1]?.trim() ?? null;
         const fromAddress = fromMatch[2] ?? fullMessage.from ?? 'unknown';
 
-        const timestamp = typeof fullMessage.timestamp === 'string'
-          ? fullMessage.timestamp
-          : fullMessage.timestamp instanceof Date
-            ? fullMessage.timestamp.toISOString()
-            : new Date().toISOString();
+        const timestamp = fullMessage.timestamp || new Date().toISOString();
 
         try {
           db.run(`

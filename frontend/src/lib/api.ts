@@ -86,7 +86,11 @@ export interface Newsletter {
   createdAt: string;
   rawText?: string;
   rawHtml?: string;
-  extractedContent?: any;
+  extractedContent?: {
+    keyTakeaways?: string[];
+    sections?: Array<{ heading: string; summary: string }>;
+    links?: Array<{ title: string; url?: string }>;
+  };
 }
 
 export interface NewsletterListResponse {

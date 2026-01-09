@@ -11,21 +11,20 @@ export default function Home() {
   const [isChecking, setIsChecking] = useState(true);
 
   useEffect(() => {
+    const checkConnection = async () => {
+      const config = getStoredConfig();
+      if (config.url && config.key) {
+        try {
+          await validateApiKey();
+          setIsConnected(true);
+        } catch {
+          setIsConnected(false);
+        }
+      }
+      setIsChecking(false);
+    };
     checkConnection();
   }, []);
-
-  const checkConnection = async () => {
-    const config = getStoredConfig();
-    if (config.url && config.key) {
-      try {
-        await validateApiKey();
-        setIsConnected(true);
-      } catch {
-        setIsConnected(false);
-      }
-    }
-    setIsChecking(false);
-  };
 
   const handleConnect = () => {
     setIsConnected(true);

@@ -1,4 +1,4 @@
-import { Context, Next } from 'hono';
+import type { Context, Next } from 'hono';
 import { getDb } from '../db';
 
 export async function authMiddleware(c: Context, next: Next) {

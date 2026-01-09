@@ -35,10 +35,42 @@ function HistoryContent() {
   const [scheduleName, setScheduleName] = useState<string | null>(null);
 
   useEffect(() => {
+    const checkConnection = async () => {
+      const config = getStoredConfig();
+      if (config.url && config.key) {
+        try {
+          await validateApiKey();
+          setIsConnected(true);
+        } catch {
+          router.push("/");
+        }
+      } else {
+        router.push("/");
+      }
+      setIsChecking(false);
+    };
     checkConnection();
-  }, []);
+  }, [router]);
 
   useEffect(() => {
+    const loadHistory = async () => {
+      setIsLoading(true);
+      try {
+        if (scheduleId) {
+          const result = await getScheduleHistory(parseInt(scheduleId), 50);
+          setHistory(result.data);
+          setScheduleName(result.schedule.name);
+        } else {
+          const result = await getProcessingHistory(50);
+          setHistory(result.data);
+          setScheduleName(null);
+        }
+      } catch (error) {
+        console.error("Failed to load history:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
     if (isConnected) {
       loadHistory();
     }
@@ -47,6 +79,22 @@ function HistoryContent() {
   // Auto-refresh every 10 seconds and on window focus
   useEffect(() => {
     if (!isConnected) return;
+
+    const loadHistory = async () => {
+      try {
+        if (scheduleId) {
+          const result = await getScheduleHistory(parseInt(scheduleId), 50);
+          setHistory(result.data);
+          setScheduleName(result.schedule.name);
+        } else {
+          const result = await getProcessingHistory(50);
+          setHistory(result.data);
+          setScheduleName(null);
+        }
+      } catch (error) {
+        console.error("Failed to load history:", error);
+      }
+    };
 
     const interval = setInterval(loadHistory, 10000);
 
@@ -58,40 +106,6 @@ function HistoryContent() {
       window.removeEventListener("focus", handleFocus);
     };
   }, [isConnected, scheduleId]);
-
-  const checkConnection = async () => {
-    const config = getStoredConfig();
-    if (config.url && config.key) {
-      try {
-        await validateApiKey();
-        setIsConnected(true);
-      } catch {
-        router.push("/");
-      }
-    } else {
-      router.push("/");
-    }
-    setIsChecking(false);
-  };
-
-  const loadHistory = async () => {
-    setIsLoading(true);
-    try {
-      if (scheduleId) {
-        const result = await getScheduleHistory(parseInt(scheduleId), 50);
-        setHistory(result.data);
-        setScheduleName(result.schedule.name);
-      } else {
-        const result = await getProcessingHistory(50);
-        setHistory(result.data);
-        setScheduleName(null);
-      }
-    } catch (error) {
-      console.error("Failed to load history:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const handleDisconnect = () => {
     clearApiConfig();
