@@ -166,6 +166,35 @@ async function autoSyncAndProcess(): Promise<void> {
   }
 }
 
+/**
+ * Get newsletter IDs that have already been used in completed digests for a specific schedule.
+ * This prevents the same emails from being re-used in subsequent runs of the same schedule,
+ * while allowing different schedules to share the same newsletters.
+ */
+function getUsedNewsletterIdsForSchedule(scheduleId: number): Set<number> {
+  const db = getDb();
+
+  const completedRuns = db.query(`
+    SELECT newsletter_ids
+    FROM processing_history
+    WHERE schedule_id = ? AND status = 'completed' AND newsletter_ids IS NOT NULL
+  `).all(scheduleId) as { newsletter_ids: string }[];
+
+  const usedIds = new Set<number>();
+
+  for (const run of completedRuns) {
+    try {
+      const ids = JSON.parse(run.newsletter_ids) as number[];
+      ids.forEach(id => usedIds.add(id));
+    } catch {
+      // Skip malformed JSON entries
+      console.warn('Skipping malformed newsletter_ids in processing_history');
+    }
+  }
+
+  return usedIds;
+}
+
 async function checkAndRunSchedules(): Promise<void> {
   const db = getDb();
   const now = new Date();
@@ -205,16 +234,31 @@ export async function runScheduledDigest(schedule: Schedule): Promise<{ processi
   // Find newsletters from the last 7 days
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
-  const newsletters = db.query(`
+  // Get IDs of newsletters already used in completed digests for this schedule
+  const usedNewsletterIds = getUsedNewsletterIdsForSchedule(schedule.id);
+
+  const allNewsletters = db.query(`
     SELECT id, from_address, from_name, subject, raw_text, raw_html, extracted_content, topics
     FROM newsletters
     WHERE received_at >= ?
     ORDER BY received_at DESC
   `).all(sevenDaysAgo) as Newsletter[];
 
+  // Filter out newsletters already used in this schedule's completed digests
+  const newsletters = allNewsletters.filter(n => !usedNewsletterIds.has(n.id));
+
+  if (usedNewsletterIds.size > 0) {
+    console.log(`Schedule "${schedule.name}": excluding ${usedNewsletterIds.size} previously used newsletters`);
+  }
+
   if (newsletters.length === 0) {
-    console.log(`No newsletters in the last 7 days for "${schedule.name}"`);
-    throw new Error(`No newsletters in the last 7 days`);
+    if (allNewsletters.length === 0) {
+      console.log(`No newsletters in the last 7 days for "${schedule.name}"`);
+      throw new Error(`No newsletters in the last 7 days`);
+    } else {
+      console.log(`No new newsletters for "${schedule.name}" (all ${allNewsletters.length} were previously used)`);
+      throw new Error(`No new newsletters available. All ${allNewsletters.length} newsletters from the last 7 days were already included in previous digests for this schedule.`);
+    }
   }
 
   // First, extract content/topics for any newsletters that don't have them yet
